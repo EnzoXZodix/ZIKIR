@@ -1,0 +1,242 @@
+#!/bin/bash
+# ================================================
+# ZIVPN UDP MENU - FULL BASH (NO PYTHON)
+# Akses: zivpn-menu
+# ================================================
+
+export RED='\033[0;31m'
+export GREEN='\033[0;32m'
+export YELLOW='\033[0;33m'
+export BLUE='\033[0;34m'
+export PURPLE='\033[0;35m'
+export CY='\033[0;36m'
+export LIGHT='\033[0;37m'
+export NC='\033[0m'
+
+function garis() { echo -e "\( {CY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ \){NC}"; }
+
+DIR="/etc/zivpn"
+DB="$DIR/accounts.db"
+JSON="/etc/zivpn/config.json"
+
+[ ! -f "$DB" ] && touch "$DB"
+
+# ====================== PURE BASH JSON HANDLER ======================
+add_account() {
+  local pass="$1"
+  [ -z "$pass" ] && return
+  # Hapus dulu jika sudah ada
+  sed -i "/\"$pass\"/d" "$JSON" 2>/dev/null
+  # Tambahkan ke array config
+  if grep -q '"config": \[\]' "$JSON"; then
+    sed -i 's/"config": \[\]/"config": ["'"$pass"'"]/' "$JSON"
+  else
+    sed -i "/\"config\": \[/ s/]/, \"$pass\" ]/" "$JSON"
+  fi
+}
+
+del_account() {
+  local pass="$1"
+  [ -z "$pass" ] && return
+  sed -i "/\"$pass\"/d" "$JSON" 2>/dev/null
+  sed -i 's/,\s*]/]/' "$JSON" 2>/dev/null
+  sed -i 's/\[\s*,/[/' "$JSON" 2>/dev/null
+}
+
+list_accounts() {
+  grep -o '"config":\s*\[\([^]]*\)\]' "$JSON" 2>/dev/null | \
+  sed 's/"config":\s*\[//;s/\]//g' | tr -d ' "' | tr ',' '\n' | grep -v '^$'
+}
+
+# ====================== AUTO CLEAN EXPIRED ======================
+clean_expired() {
+  today=$(date +%Y-%m-%d)
+  tmp=$(mktemp)
+  deleted=0
+  while IFS='|' read -r pwd exp_date || [ -n "$pwd" ]; do
+    [ -z "$pwd" ] && continue
+    if [ "$exp_date" = "unlimited" ] || [ "$today" <= "$exp_date" ]; then
+      echo "$pwd|$exp_date" >> "$tmp"
+    else
+      del_account "$pwd"
+      deleted=1
+      echo -e "${YELLOW}Expired account [\( pwd] dihapus otomatis. \){NC}"
+    fi
+  done < "$DB"
+  mv "$tmp" "$DB"
+  [ $deleted -eq 1 ] && systemctl restart zivpn >/dev/null 2>&1
+}
+
+get_ip_info() {
+  local json=$(curl -s "http://ip-api.com/json?fields=status,city,isp")
+  if echo "$json" | grep -q '"status":"success"'; then
+    city=$(echo "$json" | grep -o '"city":"[^"]*"' | cut -d'"' -f4)
+    isp=$(echo "$json" | grep -o '"isp":"[^"]*"' | cut -d'"' -f4)
+  else
+    city="Unknown"; isp="Unknown"
+  fi
+}
+
+get_domain() {
+  [ -f /etc/xray/domain ] && cat /etc/xray/domain || curl -s ipv4.icanhazip.com
+}
+
+# ====================== CREATE ======================
+function create() {
+  clear; garis
+  echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP CREATE°            \E[0m|"
+  garis
+  read -p "Password   : " pwd
+  read -p "Exp (0 untuk unlimited) : " expd
+  [[ ! "\( expd" =\~ ^[0-9]+ \) ]] && { echo -e "\( {RED}Exp harus angka! \){NC}"; return; }
+
+  get_ip_info
+  domain=$(get_domain)
+
+  if [ "$expd" -eq 0 ]; then
+    exp_date="unlimited"
+    exp_show="UNLIMITED"
+  else
+    exp_date=\( (date -d "+ \){expd} days" +%Y-%m-%d)
+    exp_show="$exp_date"
+  fi
+
+  add_account "$pwd"
+  echo "$pwd|$exp_date" >> "$DB"
+  systemctl restart zivpn >/dev/null 2>&1
+
+  clear
+  garis
+  echo -e "\( {CY}━━━━━━━━━━━━━━━━━━━━━ \){NC}"
+  echo -e "\( {GREEN}PREMIUM ACCOUNT ZIV UDP \){NC}"
+  echo -e "\( {CY}━━━━━━━━━━━━━━━━━━━━━ \){NC}"
+  echo -e "Password   : $pwd"
+  echo -e "CITY       : $city"
+  echo -e "ISP        : $isp"
+  echo -e "Domain     : $domain"
+  echo -e "Expired On : $exp_show"
+  echo -e "\( {CY}━━━━━━━━━━━━━━━━━━━━━ \){NC}"
+  garis
+  echo -e "${GREEN}| \E[44;1;39m      XD STORE            \E[0m|"
+  garis
+}
+
+# ====================== DELETE ======================
+function delete() {
+  clear; garis
+  echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP DELETE°            \E[0m|"
+  garis
+  read -p "Password : " pwd
+  del_account "$pwd"
+  sed -i "/^$pwd|/d" "$DB" 2>/dev/null
+  systemctl restart zivpn >/dev/null 2>&1
+  clear
+  garis
+  echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP DELETED!°            \E[0m|"
+  garis
+  echo "PASSWORD: $pwd"
+  echo "Delete success!!"
+  garis
+  echo -e "${GREEN}| \E[44;1;39m      XD STORE            \E[0m|"
+  garis
+}
+
+# ====================== RENEW ======================
+function renew() {
+  clear; garis
+  echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP RENEW°            \E[0m|"
+  garis
+  read -p "Password : " pwd
+  if ! grep -q "^$pwd|" "$DB"; then
+    echo -e "\( {RED}Account tidak ditemukan! \){NC}"
+    return
+  fi
+  read -p "New Exp (0 unlimited) : " expd
+  [[ ! "\( expd" =\~ ^[0-9]+ \) ]] && { echo -e "\( {RED}Exp harus angka! \){NC}"; return; }
+
+  if [ "$expd" -eq 0 ]; then
+    new_date="unlimited"
+  else
+    new_date=\( (date -d "+ \){expd} days" +%Y-%m-%d)
+  fi
+  sed -i "s/^\( pwd|.* \)/$pwd|$new_date/" "$DB"
+  echo -e "\( {GREEN}Renew success!! \){NC}"
+}
+
+# ====================== SHOW ======================
+function show() {
+  clear
+  clean_expired
+  garis
+  echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP MEMBER!°            \E[0m|"
+  garis
+  if [ ! -s "$DB" ]; then
+    echo "Tidak ada akun."
+  else
+    get_ip_info
+    domain=$(get_domain)
+    while IFS='|' read -r pwd exp_date; do
+      [ -z "$pwd" ] && continue
+      [ "$exp_date" = "unlimited" ] && exp_show="UNLIMITED" || exp_show="$exp_date"
+      echo -e "\( {CY}━━━━━━━━━━━━━━━━━━━━━ \){NC}"
+      echo -e "\( {GREEN}PREMIUM ACCOUNT ZIV UDP \){NC}"
+      echo -e "\( {CY}━━━━━━━━━━━━━━━━━━━━━ \){NC}"
+      echo -e "Password   : $pwd"
+      echo -e "CITY       : $city"
+      echo -e "ISP        : $isp"
+      echo -e "Domain     : $domain"
+      echo -e "Expired On : $exp_show"
+      echo -e "\( {CY}━━━━━━━━━━━━━━━━━━━━━ \){NC}"
+      echo ""
+    done < "$DB"
+  fi
+  garis
+  echo -e "${GREEN}| \E[44;1;39m      XD STORE            \E[0m|"
+  garis
+}
+
+# ====================== REMOVE ALL ======================
+function remove_all() {
+  clear; garis
+  echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP REMOVE ALL°            \E[0m|"
+  garis
+  read -p "Apakah Anda ingin menghapus SEMUA user? (Y/N): " choice
+  if [[ "\( choice" =\~ ^[Yy] \) ]]; then
+    echo "MENGHAPUS SEMUA USER!"
+    for p in $(list_accounts); do del_account "$p"; done
+    > "$DB"
+    systemctl restart zivpn >/dev/null 2>&1
+    echo -e "\( {GREEN}Semua akun berhasil dihapus! \){NC}"
+  else
+    echo "Dibatalkan."
+  fi
+  garis
+  echo -e "${GREEN}| \E[44;1;39m      XD STORE            \E[0m|"
+  garis
+}
+
+# ====================== MAIN MENU ======================
+clear
+garis
+echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP SERVICE°            \E[0m|"
+garis
+echo -e "${LIGHT}"
+echo -e "01. CREATE ACCOUNT ZIV UDP"
+echo -e "02. DELETE ACCOUNT ZIV UDP"
+echo -e "03. RENEW ACCOUNT ZIV UDP"
+echo -e "04. SHOW ALL ACCOUNT ZIV UDP"
+echo -e "05. REMOVE ALL ACCOUNT ZIV UDP"
+echo -e "00. EXIT"
+garis
+echo -e "${GREEN}| \E[44;1;39m            XD STORE            \E[0m|"
+garis
+read -p " Select menu : " opt
+case $opt in
+  01|1) create ;;
+  02|2) delete ;;
+  03|3) renew ;;
+  04|4) show ;;
+  05|5) remove_all ;;
+  00|0) clear; exit 0 ;;
+  *) clear; echo -e "\( {RED}Pilihan tidak valid! \){NC}" ;;
+esac
