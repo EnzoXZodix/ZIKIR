@@ -1,6 +1,6 @@
 #!/bin/bash
 # ================================================
-# ZIVPN UDP MENU - FULL BASH (CLEAN - NO ESCAPE ERROR)
+# ZIVPN UDP MENU - FULL BASH (FINAL CLEAN FIX)
 # ================================================
 
 export RED='\033[0;31m'
@@ -9,7 +9,7 @@ export YELLOW='\033[0;33m'
 export CY='\033[0;36m'
 export NC='\033[0m'
 
-function garis() { echo -e "\( {CY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ \){NC}"; }
+function garis() { echo -e "${CY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; }
 
 DIR="/etc/zivpn"
 DB="$DIR/accounts.db"
@@ -47,12 +47,12 @@ clean_expired() {
   deleted=0
   while IFS='|' read -r pwd exp_date || [ -n "$pwd" ]; do
     [ -z "$pwd" ] && continue
-    if [ "$exp_date" = "unlimited" ] || [ "$today" <= "$exp_date" ]; then
+    if [ "$exp_date" = "unlimited" ] || [[ "$today" < "$exp_date" ]]; then
       echo "$pwd|$exp_date" >> "$tmp"
     else
       del_account "$pwd"
       deleted=1
-      echo -e "${YELLOW}Expired account [\( pwd] dihapus otomatis. \){NC}"
+      echo -e "${YELLOW}Expired account [$pwd] dihapus otomatis.${NC}"
     fi
   done < "$DB"
   mv "$tmp" "$DB"
@@ -79,7 +79,10 @@ function create() {
   garis
   read -p "Password   : " pwd
   read -p "Exp (0 untuk unlimited) : " expd
-  [[ ! "\( expd" =\~ ^[0-9]+ \) ]] && { echo -e "\( {RED}Exp harus angka! \){NC}"; return; }
+  if [[ ! "$expd" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED}Exp harus angka!${NC}"
+    return
+  fi
 
   get_ip_info
   domain=$(get_domain)
@@ -88,7 +91,7 @@ function create() {
     exp_date="unlimited"
     exp_show="UNLIMITED"
   else
-    exp_date=\( (date -d "+ \){expd} days" +%Y-%m-%d)
+    exp_date=$(date -d "+${expd} days" +%Y-%m-%d)
     exp_show="$exp_date"
   fi
 
@@ -98,15 +101,15 @@ function create() {
 
   clear
   garis
-  echo -e "\( {CY}━━━━━━━━━━━━━━━━━━━━━ \){NC}"
-  echo -e "\( {GREEN}PREMIUM ACCOUNT ZIV UDP \){NC}"
-  echo -e "\( {CY}━━━━━━━━━━━━━━━━━━━━━ \){NC}"
+  echo -e "${CY}━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${GREEN}PREMIUM ACCOUNT ZIV UDP${NC}"
+  echo -e "${CY}━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo -e "Password   : $pwd"
   echo -e "CITY       : $city"
   echo -e "ISP        : $isp"
   echo -e "Domain     : $domain"
   echo -e "Expired On : $exp_show"
-  echo -e "\( {CY}━━━━━━━━━━━━━━━━━━━━━ \){NC}"
+  echo -e "${CY}━━━━━━━━━━━━━━━━━━━━━${NC}"
   garis
   echo -e "${GREEN}| \E[44;1;39m      XD STORE            \E[0m|"
   garis
@@ -137,19 +140,22 @@ function renew() {
   garis
   read -p "Password : " pwd
   if ! grep -q "^$pwd|" "$DB"; then
-    echo -e "\( {RED}Account tidak ditemukan! \){NC}"
+    echo -e "${RED}Account tidak ditemukan!${NC}"
     return
   fi
   read -p "New Exp (0 unlimited) : " expd
-  [[ ! "\( expd" =\~ ^[0-9]+ \) ]] && { echo -e "\( {RED}Exp harus angka! \){NC}"; return; }
+  if [[ ! "$expd" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED}Exp harus angka!${NC}"
+    return
+  fi
 
   if [ "$expd" -eq 0 ]; then
     new_date="unlimited"
   else
-    new_date=\( (date -d "+ \){expd} days" +%Y-%m-%d)
+    new_date=$(date -d "+${expd} days" +%Y-%m-%d)
   fi
-  sed -i "s/^\( pwd|.* \)/$pwd|$new_date/" "$DB"
-  echo -e "\( {GREEN}Renew success!! \){NC}"
+  sed -i "s/^$pwd|.*/$pwd|$new_date/" "$DB"
+  echo -e "${GREEN}Renew success!!${NC}"
 }
 
 function show() {
@@ -166,15 +172,15 @@ function show() {
     while IFS='|' read -r pwd exp_date; do
       [ -z "$pwd" ] && continue
       [ "$exp_date" = "unlimited" ] && exp_show="UNLIMITED" || exp_show="$exp_date"
-      echo -e "\( {CY}━━━━━━━━━━━━━━━━━━━━━ \){NC}"
-      echo -e "\( {GREEN}PREMIUM ACCOUNT ZIV UDP \){NC}"
-      echo -e "\( {CY}━━━━━━━━━━━━━━━━━━━━━ \){NC}"
+      echo -e "${CY}━━━━━━━━━━━━━━━━━━━━━${NC}"
+      echo -e "${GREEN}PREMIUM ACCOUNT ZIV UDP${NC}"
+      echo -e "${CY}━━━━━━━━━━━━━━━━━━━━━${NC}"
       echo -e "Password   : $pwd"
       echo -e "CITY       : $city"
       echo -e "ISP        : $isp"
       echo -e "Domain     : $domain"
       echo -e "Expired On : $exp_show"
-      echo -e "\( {CY}━━━━━━━━━━━━━━━━━━━━━ \){NC}"
+      echo -e "${CY}━━━━━━━━━━━━━━━━━━━━━${NC}"
       echo ""
     done < "$DB"
   fi
@@ -188,12 +194,12 @@ function remove_all() {
   echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP REMOVE ALL°            \E[0m|"
   garis
   read -p "Apakah Anda ingin menghapus SEMUA user? (Y/N): " choice
-  if [[ "\( choice" =\~ ^[Yy] \) ]]; then
+  if [[ "$choice" =~ ^[Yy] ]]; then
     echo "MENGHAPUS SEMUA USER!"
     for p in $(list_accounts); do del_account "$p"; done
     > "$DB"
     systemctl restart zivpn >/dev/null 2>&1
-    echo -e "\( {GREEN}Semua akun berhasil dihapus! \){NC}"
+    echo -e "${GREEN}Semua akun berhasil dihapus!${NC}"
   else
     echo "Dibatalkan."
   fi
@@ -224,5 +230,5 @@ case $opt in
   04|4) show ;;
   05|5) remove_all ;;
   00|0) clear; exit 0 ;;
-  *) clear; echo -e "\( {RED}Pilihan tidak valid! \){NC}" ;;
+  *) clear; echo -e "${RED}Pilihan tidak valid!${NC}" ;;
 esac
