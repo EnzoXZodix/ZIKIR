@@ -1,6 +1,6 @@
 #!/bin/bash
 # ================================================
-# ZIVPN UDP MENU - FULL BASH (FINAL CLEAN FIX)
+# ZIVPN UDP MENU - BASH MURNI (TANPA PYTHON)
 # ================================================
 
 export RED='\033[0;31m'
@@ -12,52 +12,45 @@ export NC='\033[0m'
 function garis() { echo -e "${CY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; }
 
 DIR="/etc/zivpn"
-DB="$DIR/accounts.db"
-JSON="/etc/zivpn/config.json"
+JSON="$DIR/config.json"
+EXPIRED_DB="$DIR/expired.db"
 
-[ ! -f "$DB" ] && touch "$DB"
+[ ! -f "$EXPIRED_DB" ] && touch "$EXPIRED_DB"
 
+# ==================== FUNGSI MANAJEMEN AKUN ====================
+
+# Menambahkan password ke config.json (tanpa duplikat)
 add_account() {
   local pass="$1"
-  [ -z "$pass" ] && return
+  [ -z "$pass" ] && return 1
+  # Hapus dulu jika sudah ada (biar bersih)
   sed -i "/\"$pass\"/d" "$JSON" 2>/dev/null
   if grep -q '"config": \[\]' "$JSON"; then
     sed -i 's/"config": \[\]/"config": ["'"$pass"'"]/' "$JSON"
   else
     sed -i "/\"config\": \[/ s/]/, \"$pass\" ]/" "$JSON"
   fi
+  return 0
 }
 
+# Menghapus password dari config.json
 del_account() {
   local pass="$1"
-  [ -z "$pass" ] && return
+  [ -z "$pass" ] && return 1
   sed -i "/\"$pass\"/d" "$JSON" 2>/dev/null
+  # Bersihkan koma berlebih
   sed -i 's/,\s*]/]/' "$JSON" 2>/dev/null
   sed -i 's/\[\s*,/[/' "$JSON" 2>/dev/null
+  return 0
 }
 
+# Mendaftar semua password dari config.json
 list_accounts() {
   grep -o '"config":\s*\[\([^]]*\)\]' "$JSON" 2>/dev/null | \
   sed 's/"config":\s*\[//;s/\]//g' | tr -d ' "' | tr ',' '\n' | grep -v '^$'
 }
 
-clean_expired() {
-  today=$(date +%Y-%m-%d)
-  tmp=$(mktemp)
-  deleted=0
-  while IFS='|' read -r pwd exp_date || [ -n "$pwd" ]; do
-    [ -z "$pwd" ] && continue
-    if [ "$exp_date" = "unlimited" ] || [[ "$today" < "$exp_date" ]]; then
-      echo "$pwd|$exp_date" >> "$tmp"
-    else
-      del_account "$pwd"
-      deleted=1
-      echo -e "${YELLOW}Expired account [$pwd] dihapus otomatis.${NC}"
-    fi
-  done < "$DB"
-  mv "$tmp" "$DB"
-  [ $deleted -eq 1 ] && systemctl restart zivpn >/dev/null 2>&1
-}
+# ==================== FUNGSI LAINNYA ====================
 
 get_ip_info() {
   local json=$(curl -s "http://ip-api.com/json?fields=status,city,isp")
@@ -73,7 +66,9 @@ get_domain() {
   [ -f /etc/xray/domain ] && cat /etc/xray/domain || curl -s ipv4.icanhazip.com
 }
 
-function create() {
+# ==================== MENU ====================
+
+create() {
   clear; garis
   echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP CREATE°            \E[0m|"
   garis
@@ -81,6 +76,12 @@ function create() {
   read -p "Exp (0 untuk unlimited) : " expd
   if [[ ! "$expd" =~ ^[0-9]+$ ]]; then
     echo -e "${RED}Exp harus angka!${NC}"
+    return
+  fi
+
+  # Cek apakah password sudah ada
+  if list_accounts | grep -qx "$pwd"; then
+    echo -e "${RED}Password sudah terdaftar!${NC}"
     return
   fi
 
@@ -96,7 +97,7 @@ function create() {
   fi
 
   add_account "$pwd"
-  echo "$pwd|$exp_date" >> "$DB"
+  echo "$pwd|$exp_date" >> "$EXPIRED_DB"
   systemctl restart zivpn >/dev/null 2>&1
 
   clear
@@ -115,13 +116,17 @@ function create() {
   garis
 }
 
-function delete() {
+delete() {
   clear; garis
   echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP DELETE°            \E[0m|"
   garis
   read -p "Password : " pwd
+  if ! list_accounts | grep -qx "$pwd"; then
+    echo -e "${RED}Account tidak ditemukan!${NC}"
+    return
+  fi
   del_account "$pwd"
-  sed -i "/^$pwd|/d" "$DB" 2>/dev/null
+  sed -i "/^$pwd|/d" "$EXPIRED_DB"
   systemctl restart zivpn >/dev/null 2>&1
   clear
   garis
@@ -134,12 +139,12 @@ function delete() {
   garis
 }
 
-function renew() {
+renew() {
   clear; garis
   echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP RENEW°            \E[0m|"
   garis
   read -p "Password : " pwd
-  if ! grep -q "^$pwd|" "$DB"; then
+  if ! list_accounts | grep -qx "$pwd"; then
     echo -e "${RED}Account tidak ditemukan!${NC}"
     return
   fi
@@ -154,24 +159,27 @@ function renew() {
   else
     new_date=$(date -d "+${expd} days" +%Y-%m-%d)
   fi
-  sed -i "s/^$pwd|.*/$pwd|$new_date/" "$DB"
+  sed -i "s/^$pwd|.*/$pwd|$new_date/" "$EXPIRED_DB"
   echo -e "${GREEN}Renew success!!${NC}"
 }
 
-function show() {
+show() {
   clear
-  clean_expired
   garis
   echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP MEMBER!°            \E[0m|"
   garis
-  if [ ! -s "$DB" ]; then
+
+  mapfile -t passwords < <(list_accounts)
+  if [ ${#passwords[@]} -eq 0 ]; then
     echo "Tidak ada akun."
   else
     get_ip_info
     domain=$(get_domain)
-    while IFS='|' read -r pwd exp_date; do
-      [ -z "$pwd" ] && continue
+    for pwd in "${passwords[@]}"; do
+      exp_date=$(grep "^$pwd|" "$EXPIRED_DB" | cut -d'|' -f2)
+      [ -z "$exp_date" ] && exp_date="unlimited"
       [ "$exp_date" = "unlimited" ] && exp_show="UNLIMITED" || exp_show="$exp_date"
+
       echo -e "${CY}━━━━━━━━━━━━━━━━━━━━━${NC}"
       echo -e "${GREEN}PREMIUM ACCOUNT ZIV UDP${NC}"
       echo -e "${CY}━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -182,22 +190,24 @@ function show() {
       echo -e "Expired On : $exp_show"
       echo -e "${CY}━━━━━━━━━━━━━━━━━━━━━${NC}"
       echo ""
-    done < "$DB"
+    done
   fi
   garis
   echo -e "${GREEN}| \E[44;1;39m      XD STORE            \E[0m|"
   garis
 }
 
-function remove_all() {
+remove_all() {
   clear; garis
   echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP REMOVE ALL°            \E[0m|"
   garis
   read -p "Apakah Anda ingin menghapus SEMUA user? (Y/N): " choice
   if [[ "$choice" =~ ^[Yy] ]]; then
     echo "MENGHAPUS SEMUA USER!"
-    for p in $(list_accounts); do del_account "$p"; done
-    > "$DB"
+    for p in $(list_accounts); do
+      del_account "$p"
+    done
+    > "$EXPIRED_DB"
     systemctl restart zivpn >/dev/null 2>&1
     echo -e "${GREEN}Semua akun berhasil dihapus!${NC}"
   else
@@ -208,11 +218,11 @@ function remove_all() {
   garis
 }
 
+# ==================== MAIN MENU ====================
 clear
 garis
 echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP SERVICE°            \E[0m|"
 garis
-echo -e "${LIGHT}"
 echo -e "01. CREATE ACCOUNT ZIV UDP"
 echo -e "02. DELETE ACCOUNT ZIV UDP"
 echo -e "03. RENEW ACCOUNT ZIV UDP"
