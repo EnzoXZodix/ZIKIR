@@ -1,0 +1,40 @@
+#!/bin/bash
+# ================================================
+# ZIVPN UDP CLEANER - HAPUS AKUN EXPIRED
+# ================================================
+
+DIR="/etc/zivpn"
+JSON="$DIR/config.json"
+EXPIRED_DB="$DIR/expired.db"
+
+[ ! -f "$EXPIRED_DB" ] && exit 0
+
+today=$(date +%Y-%m-%d)
+tmp_db=$(mktemp)
+deleted=0
+
+# Fungsi hapus password dari config.json (sama seperti di menu)
+del_account() {
+  local pass="$1"
+  [ -z "$pass" ] && return
+  sed -i "/\"$pass\"/d" "$JSON" 2>/dev/null
+  sed -i 's/,\s*]/]/' "$JSON" 2>/dev/null
+  sed -i 's/\[\s*,/[/' "$JSON" 2>/dev/null
+}
+
+while IFS='|' read -r pwd exp_date; do
+  [ -z "$pwd" ] && continue
+  if [ "$exp_date" = "unlimited" ] || [[ "$today" < "$exp_date" ]]; then
+    echo "$pwd|$exp_date" >> "$tmp_db"
+  else
+    del_account "$pwd"
+    deleted=1
+    echo "$(date) - Expired account $pwd dihapus" >> /var/log/zivpn-clean.log
+  fi
+done < "$EXPIRED_DB"
+
+mv "$tmp_db" "$EXPIRED_DB"
+
+if [ $deleted -eq 1 ]; then
+  systemctl restart zivpn >/dev/null 2>&1
+fi
