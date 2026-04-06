@@ -1,16 +1,12 @@
 #!/bin/bash
 # ================================================
-# ZIVPN UDP MENU - FULL BASH (NO PYTHON)
-# Akses: zivpn-menu
+# ZIVPN UDP MENU - FULL BASH (CLEAN - NO ESCAPE ERROR)
 # ================================================
 
 export RED='\033[0;31m'
 export GREEN='\033[0;32m'
 export YELLOW='\033[0;33m'
-export BLUE='\033[0;34m'
-export PURPLE='\033[0;35m'
 export CY='\033[0;36m'
-export LIGHT='\033[0;37m'
 export NC='\033[0m'
 
 function garis() { echo -e "\( {CY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ \){NC}"; }
@@ -21,13 +17,10 @@ JSON="/etc/zivpn/config.json"
 
 [ ! -f "$DB" ] && touch "$DB"
 
-# ====================== PURE BASH JSON HANDLER ======================
 add_account() {
   local pass="$1"
   [ -z "$pass" ] && return
-  # Hapus dulu jika sudah ada
   sed -i "/\"$pass\"/d" "$JSON" 2>/dev/null
-  # Tambahkan ke array config
   if grep -q '"config": \[\]' "$JSON"; then
     sed -i 's/"config": \[\]/"config": ["'"$pass"'"]/' "$JSON"
   else
@@ -48,7 +41,6 @@ list_accounts() {
   sed 's/"config":\s*\[//;s/\]//g' | tr -d ' "' | tr ',' '\n' | grep -v '^$'
 }
 
-# ====================== AUTO CLEAN EXPIRED ======================
 clean_expired() {
   today=$(date +%Y-%m-%d)
   tmp=$(mktemp)
@@ -81,7 +73,6 @@ get_domain() {
   [ -f /etc/xray/domain ] && cat /etc/xray/domain || curl -s ipv4.icanhazip.com
 }
 
-# ====================== CREATE ======================
 function create() {
   clear; garis
   echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP CREATE°            \E[0m|"
@@ -121,7 +112,6 @@ function create() {
   garis
 }
 
-# ====================== DELETE ======================
 function delete() {
   clear; garis
   echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP DELETE°            \E[0m|"
@@ -141,7 +131,6 @@ function delete() {
   garis
 }
 
-# ====================== RENEW ======================
 function renew() {
   clear; garis
   echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP RENEW°            \E[0m|"
@@ -163,7 +152,6 @@ function renew() {
   echo -e "\( {GREEN}Renew success!! \){NC}"
 }
 
-# ====================== SHOW ======================
 function show() {
   clear
   clean_expired
@@ -195,7 +183,6 @@ function show() {
   garis
 }
 
-# ====================== REMOVE ALL ======================
 function remove_all() {
   clear; garis
   echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP REMOVE ALL°            \E[0m|"
@@ -215,7 +202,6 @@ function remove_all() {
   garis
 }
 
-# ====================== MAIN MENU ======================
 clear
 garis
 echo -e "${GREEN}| \E[44;1;39m      °ZIVPN UDP SERVICE°            \E[0m|"
